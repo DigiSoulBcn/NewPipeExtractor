@@ -2,17 +2,16 @@ package org.schabi.newpipe.extractor.utils;
 
 import org.schabi.newpipe.extractor.exceptions.ParsingException;
 
+import java.io.UnsupportedEncodingException;
 import java.net.MalformedURLException;
 import java.net.URL;
 import java.net.URLDecoder;
 import java.net.URLEncoder;
-import java.nio.charset.StandardCharsets;
-import java.util.Arrays;
+import java.util.ArrayList;
 import java.util.Collection;
+import java.util.List;
 import java.util.Map;
-import java.util.Objects;
 import java.util.regex.Pattern;
-import java.util.stream.Collectors;
 
 import javax.annotation.Nonnull;
 import javax.annotation.Nullable;
@@ -29,30 +28,32 @@ public final class Utils {
 
     /**
      * Encodes a string to URL format using the UTF-8 character set.
-     *
-     * @param string The string to be encoded.
-     * @return The encoded URL.
+     * Using String "UTF-8" instead of StandardCharsets.UTF_8 for Android compatibility.
      */
     public static String encodeUrlUtf8(final String string) {
-        return URLEncoder.encode(string, StandardCharsets.UTF_8);
+        try {
+            return URLEncoder.encode(string, "UTF-8");
+        } catch (final UnsupportedEncodingException e) {
+            throw new RuntimeException(e);
+        }
     }
 
     /**
      * Decodes a URL using the UTF-8 character set.
-     * @param url The URL to be decoded.
-     * @return The decoded URL.
+     * Using String "UTF-8" instead of StandardCharsets.UTF_8 for Android compatibility.
      */
     public static String decodeUrlUtf8(final String url) {
-        return URLDecoder.decode(url, StandardCharsets.UTF_8);
+        try {
+            return URLDecoder.decode(url, "UTF-8");
+        } catch (final UnsupportedEncodingException e) {
+            throw new RuntimeException(e);
+        }
     }
 
     /**
      * Remove all non-digit characters from a string.
      *
-     * <p>
-     * Examples:
-     * </p>
-     *
+     * <p>Examples:</p>
      * <ul>
      *     <li>1 234 567 views -&gt; 1234567</li>
      *     <li>$31,133.124 -&gt; 31133124</li>
@@ -69,10 +70,7 @@ public final class Utils {
     /**
      * Convert a mixed number word to a long.
      *
-     * <p>
-     * Examples:
-     * </p>
-     *
+     * <p>Examples:</p>
      * <ul>
      *     <li>123 -&gt; 123</li>
      *     <li>1.23K -&gt; 1230</li>
@@ -144,7 +142,7 @@ public final class Utils {
      * Get the value of a URL-query by name.
      *
      * <p>
-     * If an url-query is give multiple times, only the value of the first query is returned.
+     * If an url-query is given multiple times, only the value of the first query is returned.
      * </p>
      *
      * @param url           the url to be used
@@ -160,10 +158,11 @@ public final class Utils {
         if (urlQuery != null) {
             for (final String param : urlQuery.split("&")) {
                 final String[] params = param.split("=", 2);
-                final String query = decodeUrlUtf8(params[0]);
-
-                if (query.equals(parameterName)) {
-                    return decodeUrlUtf8(params[1]);
+                if (params.length > 0) {
+                    final String query = decodeUrlUtf8(params[0]);
+                    if (query.equals(parameterName) && params.length > 1) {
+                        return decodeUrlUtf8(params[1]);
+                    }
                 }
             }
         }
@@ -174,9 +173,7 @@ public final class Utils {
     /**
      * Convert a string to a {@link URL URL object}.
      *
-     * <p>
-     * Defaults to HTTP if no protocol is given.
-     * </p>
+     * <p>Defaults to HTTPS if no protocol is given.</p>
      *
      * @param url the string to be converted to a URL-Object
      * @return a {@link URL URL object} containing the url
@@ -186,17 +183,14 @@ public final class Utils {
         try {
             return new URL(url);
         } catch (final MalformedURLException e) {
-            // If no protocol is given try prepending "https://"
-            if (e.getMessage().equals("no protocol: " + url)) {
+            if (e.getMessage() != null && e.getMessage().equals("no protocol: " + url)) {
                 return new URL(HTTPS + url);
             }
-
             throw e;
         }
     }
 
     public static boolean isHTTP(@Nonnull final URL url) {
-        // Make sure it's HTTP or HTTPS
         final String protocol = url.getProtocol();
         if (!protocol.equals("http") && !protocol.equals("https")) {
             return false;
@@ -237,8 +231,7 @@ public final class Utils {
             return uri.getProtocol() + "://" + uri.getAuthority();
         } catch (final MalformedURLException e) {
             final String message = e.getMessage();
-            if (message.startsWith("unknown protocol: ")) {
-                // Return just the protocol (e.g. vnd.youtube)
+            if (message != null && message.startsWith("unknown protocol: ")) {
                 return message.substring("unknown protocol: ".length());
             }
 
@@ -254,16 +247,14 @@ public final class Utils {
      * @return an url with no Google search redirects
      */
     public static String followGoogleRedirectIfNeeded(final String url) {
-        // If the url is a redirect from a Google search, extract the actual URL
         try {
             final URL decoded = stringToURL(url);
-            if (decoded.getHost().contains("google") && decoded.getPath().equals("/url")) {
+            if (decoded.getHost() != null && decoded.getHost().contains("google")
+                    && decoded.getPath() != null && decoded.getPath().equals("/url")) {
                 return decodeUrlUtf8(Parser.matchGroup1("&url=([^&]+)(?:&|$)", url));
             }
         } catch (final Exception ignored) {
         }
-
-        // URL is not a Google search redirect
         return url;
     }
 
@@ -299,29 +290,54 @@ public final class Utils {
         return map == null || map.isEmpty();
     }
 
+    /**
+     * Using trim().isEmpty() instead of String.isBlank() for Android compatibility (API < 33).
+     */
     public static boolean isBlank(final String string) {
-        return string == null || string.isBlank();
+        return string == null || string.trim().isEmpty();
     }
 
+    /**
+     * Rewritten without Streams for Android compatibility.
+     */
     @Nonnull
     public static String join(
             final String delimiter,
             final String mapJoin,
             @Nonnull final Map<? extends CharSequence, ? extends CharSequence> elements) {
-        return elements.entrySet().stream()
-                .map(entry -> entry.getKey() + mapJoin + entry.getValue())
-                .collect(Collectors.joining(delimiter));
+
+        final StringBuilder sb = new StringBuilder();
+        boolean first = true;
+        for (final Map.Entry<? extends CharSequence, ? extends CharSequence> entry
+                : elements.entrySet()) {
+            if (!first) {
+                sb.append(delimiter);
+            }
+            sb.append(entry.getKey()).append(mapJoin).append(entry.getValue());
+            first = false;
+        }
+        return sb.toString();
     }
 
     /**
-     * Concatenate all non-null, non-empty and strings which are not equal to <code>"null"</code>.
+     * Concatenate all non-null, non-empty and strings which are not equal to "null".
+     * Rewritten without Streams for Android compatibility.
      */
     @Nonnull
     public static String nonEmptyAndNullJoin(final CharSequence delimiter,
                                              final String... elements) {
-        return Arrays.stream(elements)
-                .filter(s -> !isNullOrEmpty(s) && !s.equals("null"))
-                .collect(Collectors.joining(delimiter));
+        final StringBuilder sb = new StringBuilder();
+        boolean first = true;
+        for (final String s : elements) {
+            if (!isNullOrEmpty(s) && !s.equals("null")) {
+                if (!first) {
+                    sb.append(delimiter);
+                }
+                sb.append(s);
+                first = false;
+            }
+        }
+        return sb.toString();
     }
 
     /**
@@ -358,7 +374,7 @@ public final class Utils {
 
     /**
      * Find the result of an array of string regular expressions inside an input on a specific
-     * group.
+     * group. Rewritten without Streams for Android compatibility.
      *
      * @param input   the input on which using the regular expressions
      * @param regexes the string array of regular expressions
@@ -372,17 +388,19 @@ public final class Utils {
                                                        @Nonnull final String[] regexes,
                                                        final int group)
             throws Parser.RegexException {
+        final List<Pattern> patternList = new ArrayList<>();
+        for (final String regex : regexes) {
+            if (regex != null) {
+                patternList.add(Pattern.compile(regex));
+            }
+        }
         return getStringResultFromRegexArray(input,
-                Arrays.stream(regexes)
-                        .filter(Objects::nonNull)
-                        .map(Pattern::compile)
-                        .toArray(Pattern[]::new),
+                patternList.toArray(new Pattern[0]),
                 group);
     }
 
     /**
-     * Find the result of an array of {@link Pattern}s inside an input on a specific
-     * group.
+     * Find the result of an array of {@link Pattern}s inside an input on a specific group.
      *
      * @param input   the input on which using the regular expressions
      * @param regexes the {@link Pattern} array
@@ -402,8 +420,6 @@ public final class Utils {
                 if (result != null) {
                     return result;
                 }
-
-                // Continue if the result is null
             } catch (final Parser.RegexException ignored) {
             }
         }
