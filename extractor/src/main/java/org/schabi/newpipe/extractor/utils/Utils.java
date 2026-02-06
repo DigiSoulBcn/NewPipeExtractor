@@ -290,9 +290,9 @@ public final class Utils {
         return map == null || map.isEmpty();
     }
 
-    /**
-     * Using trim().isEmpty() instead of String.isBlank() for Android compatibility (API < 33).
-     */
+   /**
+    * Using trim().isEmpty() instead of String.isBlank() for Android compatibility (API &lt; 33).
+    */
     public static boolean isBlank(final String string) {
         return string == null || string.trim().isEmpty();
     }
